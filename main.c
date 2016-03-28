@@ -19,9 +19,9 @@
 static struct mesh_conn mesh;
 
 /** PROGRAM VARIABLES **/  
-static const int TIMEOUT = 5;				// Number of counter ticks before re-trasmition -> number of listHeader structures needed to maintain the list of un-ACKed packets
-static uint8_t mode = 0; 						// 0=not initialized, 1=sender, 2=relayer, 3=receiver; global variable because the recv() method needs access
-static struct listHeader *headers;	// The pointer to the main data structure.
+static const int TIMEOUT = 5;       // Number of counter ticks before re-trasmition -> number of listHeader structures needed to maintain the list of un-ACKed packets
+static uint8_t mode = 0;            // 0=not initialized, 1=sender, 2=relayer, 3=receiver; global variable because the recv() method needs access
+static struct listHeader *headers;  // The pointer to the main data structure.
  
 
 /** PROGRAM DATA STRUCTURES **/
@@ -47,11 +47,11 @@ struct listHeader {
 /*-- TEMPERATURE EVENT LISTENER ---------------------------------------------*/
 PROCESS(temperature, "Temperature event listener");
 AUTOSTART_PROCESSES(&temperature);
-/*---------------------------------------------------------------------------*/
+/*-----------------1----------------------------------------------------------*/
 
 
 /*---------------------------------------------------------------------------*/
-/*  												  SYSTEM CALLED FUNCTIONS  										   */
+/*                            SYSTEM CALLED FUNCTIONS                        */
 /*---------------------------------------------------------------------------*/
 
 static void sent(struct mesh_conn *c)
@@ -66,86 +66,47 @@ static void timedout(struct mesh_conn *c)
 
 static void recv(struct mesh_conn *c, const linkaddr_t *from, uint8_t hops)
 {
-  //printf("Data received from %d.%d: %.*s (%d)\n", from->u8[0], from->u8[1], packetbuf_datalen(), (char *)packetbuf_dataptr(), packetbuf_datalen());
-  uint16_t id = ((uint16_t *)packetbuf_dataptr())[0];
-	  
+  int length = packetbuf_datalen();
+  printf("Data received from %d.%d: %.*s (%d)\n", from->u8[0], from->u8[1], packetbuf_datalen(), (char *)packetbuf_dataptr(), packetbuf_datalen());
+  char *copy = malloc(length);
+  int num = packetbuf_copyto(copy); //this copying is probably not needed and the data could be addressed directly
+  printf("Copied from buffer: %d\n", num);
+  //uint16_t id = ((uint16_t *)packetbuf_dataptr())[0];
+  uint16_t id = (copy[1] << 8) | copy[0];
+    
   /* If receive packet while in mode 1, means it is an ack package. */
   if (mode == 1){
-    printf("ack: %d\n", id);
+    printf("ack received: %d\n", id);
     emptyListById(id);
   }
   
-  /* If receive packet while n mode 2, means this is new data.
-   * 	- Get the data out of the packet and make it readable
-   *  - Sent an ack package with the id of the pacckage
+  /* If receive packet while in mode 3, means this is new data.
+   *  - Get the data out of the packet and make it readable
+   *  - Send an ack package with the id of the pacckage
    */
   if (mode == 3){
-    //printf("Data received from %d.%d: %.*s (%d)\n",  from->u8[0], from->u8[1],packetbuf_datalen(), (char *)packetbuf_dataptr(), packetbuf_datalen());
-    
-    // Define local var for extraction usage
-    
-    /*
-    int16_t  tempint;
-    uint16_t tempfrac;
-    int16_t  raw;
-    uint16_t absraw;
-    int16_t  sign;
-    char     minus = ' ';
-
-    printf("id: %d ----- ", id);
-    
-    // Extract raw data
-    raw = ((int16_t *)packetbuf_dataptr())[0];
-    absraw = raw;
-
-    // Checking if value below 0
-    if (raw < 0) { // Perform 2C's if sensor returned negative data
-      absraw = (raw ^ 0xFFFF) + 1;
-      sign = -1;
-    }
-
-    // Get value
-    tempint  = (absraw >> 8) * sign;
-    tempfrac = ((absraw>>4) % 16) * 625; // Info in 1/10000 of degree
-    minus = ((tempint == 0) & (sign == -1)) ? '-'  : ' ' ;
-
-    // Output data
-    printf ("Temp = %c%d.%04d\n", minus, tempint, tempfrac);
-    */
-    
     linkaddr_t target;
     packetbuf_copyfrom(&id, sizeof(id));
     target.u8[0] = 1;
     target.u8[1] = 0;
     mesh_send(&mesh, &target);
     
-    
-    /*
-      // Send ack
-      packetbuf_copyfrom(id, sizeof(id));	// Set id in the ack package
-      mesh_send(&mesh, from);						// Send the ack package
-    */
-    
-    // Define local var for extraction usage
-    int16_t  tempint;
-    uint16_t tempfrac;
-    int16_t  raw;
-    uint16_t absraw;
-    int16_t  sign;
-    char     minus = ' ';
+    printf("#DATA RECEIVED\n|   id: %d\n", id);
 
-    printf("id: %d ----- \n", id);
-    
     // Go through the package data and retrieve data.
     int i;
-    //for (i = 1; i < 2; i++){
-    for (i = 1; i <= packetbuf_datalen(); i++){// (sizeof((int16_t *)packetbuf_dataptr())); i++){
-      printf("temp_raw_value[%d]: %d,\n ", i, ((int16_t *)packetbuf_dataptr())[i]);
+    for (i = 2; i < length - 1; i = i +2){
+      // Define local var for extraction usage
+      int16_t  tempint;
+      uint16_t tempfrac;
+      uint16_t absraw;
+      int16_t  sign;
+      char     minus = ' ';
+      int16_t  raw = (copy[i+1] << 8) | copy[i];
+      printf("|   received[%d]: %d\n", i, raw);
       
-      /*-----------------------------------------
       
       // Extract raw data
-      raw = ((int16_t *)packetbuf_dataptr())[i];
       absraw = raw;
       
       // Checking if value below 0
@@ -160,10 +121,9 @@ static void recv(struct mesh_conn *c, const linkaddr_t *from, uint8_t hops)
       minus = ((tempint == 0) & (sign == -1)) ? '-'  : ' ' ;
       
       // Output data
-      //printf ("temp_full_value[%c]: %c%d.%04d\n", minus, tempint, tempfrac);
+      printf ("Temperature[%c]: %c%d.%04d\n", minus, tempint, tempfrac);
       
-      ---------------------------*/
-      
+      free(copy); 
     }// for end
 
   }// Mode 3 end
@@ -175,11 +135,8 @@ static void recv(struct mesh_conn *c, const linkaddr_t *from, uint8_t hops)
 /** SYSTEM DATA STRUCTURES **/
 const static struct mesh_callbacks callbacks = {recv, sent, timedout};
 
-
-
-
 /*---------------------------------------------------------------------------*/
-/*      												MAIN PROCESS 																 */
+/*                              MAIN PROCESS                                 */
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(temperature, ev, data)
 {
@@ -204,21 +161,18 @@ PROCESS_THREAD(temperature, ev, data)
     if (mode == 1 && etimer_expired(&et)){
       if (counter == 0){
         //Once every 18 or so hours the 16bit counter will overflow and will be reset to 0 -> in that case reinitialize
-        //the lists so that they dont contain old values (some unACK packets might get lost)
+        //the lists so that they dont contain old values (some unACKed packets might get lost)
         freeLists();
         initListHeaders();
       }
 
       etimer_reset(&et);
-      int16_t raw; 
-      raw = tmp102_read_temp_raw();  // Reading from the sensor
-      //printf("Temp_rawval_send: %hu\n", raw);
+      int16_t raw = tmp102_read_temp_raw();  // Reading from the sensor
       
-      //send(raw, counter);
-      printf("send value: %d ; send counter: %d", counter, counter);
-      send(counter, counter);
+      send(raw, counter);
+      printf("measured value: %d ; counter: %d\n", raw, counter);
       
-			counter++;
+      counter++;
     }
 
     
@@ -235,16 +189,15 @@ PROCESS_THREAD(temperature, ev, data)
         case 1: //switching TO sender mode
           initListHeaders(); //init the lists
           etimer_set(&et, CLOCK_SECOND); //prepare the timer
-        	counter = 1; //reset the counter to 1
+          counter = 1; //reset the counter to 1
           break;
         case 2: //switching FROM sender mode TO relay mode
           freeLists(); //free the list memory
           etimer_stop(&et); //stop the counter
-        	break;
+          break;
       }
 
-      // General change to the mote
-      // 	change mote address
+      // Change mote address
       linkaddr_t addr;
       addr.u8[0] = mode;
       addr.u8[1] = 0;
@@ -265,78 +218,68 @@ PROCESS_THREAD(temperature, ev, data)
 
 
 /*---------------------------------------------------------------------------*/
-/*  												  PROGRAM FUNCTIONS        										   */
+/*                            PROGRAM FUNCTIONS                              */
 /*---------------------------------------------------------------------------*/
 
 /**
- * Send sends to the target the list of unsend or un-ack values depending of the counter
+ * Send the list of unsent or un-ack values depending on the counter
  */
 void send(int16_t value, uint16_t counter)
 {
   int index = counter%TIMEOUT;
   printf("Working with header with index: %d\n", index);
+
   struct listHeader *listHeader = &headers[index]; //the listHeader contains directly the struct (not the mem. address)
-  listHeader->id = counter;
+  listHeader->id = counter; //set the id of the header to current counter
   addlistItemAtEnd(listHeader, value); //add the current value to the list (we dont really care if its empty or not)
   
-  
-  
-  //int16_t *values;
-  int16_t valuesLength;
-  void *values;
-  valuesLength = getValues(listHeader, &values);
-  
-  /*if (values == NULL){
-    return;
-  }*/
-  
-  printf("# SEND %d \n",counter);
-  printf("|   id: %d \n",counter);
-	printf("|   val: ");
-  int i;
-  for (i = 1; i <= valuesLength; i++){
-    printf("%" PRId16 " - ", ((int16_t *)values)[i]);
-  	//printf("%d ", ((int16_t *)values)[i]);
+  int16_t *values;
+  int16_t valuesLength = listHeader->size + 1;
+  if (listHeader->first == NULL || listHeader->size < 1) {
+    printf("Head was empty");
+    return NULL;
   }
-  printf("\n");
+  
+  // define the traveling pointer
+  struct listItem *next = listHeader->first;
+  // assocate the poiter with memory array
+  values = malloc((valuesLength)*sizeof(int16_t)); //Allocate heap memory for the return array of ints
+
+  // Save head id to the first position
+  values[0] = listHeader->id;
+
+  // go through all the listItem values
+  int j;
+  for (j = 1; j <= listHeader->size; j++){
+    // copy item values to the array to be send
+    values[j] = next->value;
+    printf("value = %d\n", next->value);
+    next = next->next;            
+    if (next == NULL){
+      break;
+    }
+  }
+
+  printf("# SENDING %d \n",counter);
+  printf("|   id: %d \n",counter);
+  int i;
+  for (i = 0; i < valuesLength; i++){
+    printf("|   data[%d]: %d\n",i, values[i]);
+  }
   
   linkaddr_t target;
-  //short val[2] = {counter, value};
-  //packetbuf_copyfrom(&val, sizeof(counter));
-  packetbuf_copyfrom(&values, sizeof(*values));
+  int copied = packetbuf_copyfrom(values, valuesLength*sizeof(int16_t));
+  printf("NUMBER COPIED: %d\n", copied);
   target.u8[0] = 3;
   target.u8[1] = 0;
   mesh_send(&mesh, &target);
- 
-  /*
-      int16_t  tempint;
-      uint16_t tempfrac;
-      int16_t  raw;
-      uint16_t absraw;
-      int16_t  sign;
-      char     minus = ' ';
-    
-  		// Extract raw data
-      raw = value;//((int16_t *)values)[1];
-  		absraw = raw;    
-  
-      // Get value
-      tempint  = (absraw >> 8) * sign;
-      tempfrac = ((absraw>>4) % 16) * 625; // Info in 1/10000 of degree
-      minus = ((tempint == 0) & (sign == -1)) ? '-'  : ' ' ;
-     
-      // Output data
-  		printf ("ID: %d ------ Temp = %d", counter, value);
-      printf ("ID: %d ------ Temp = %c%d.%04d\n",counter,minus, tempint, tempfrac);
-  */
-  //free(values);
   
   leds_toggle(LEDS_BLUE);
 }
 
 
 /**
- *	Initiate the headers of our data structure
+ *  Initiate the headers of our data structure
  */
 void initListHeaders()
 {
@@ -357,7 +300,7 @@ void initListHeaders()
 }
 
 /**
- *	Free all the listItem from all ListHeaders 
+ *  Free all the listItem from all ListHeaders 
  */
 void freeLists()
 {
@@ -394,7 +337,7 @@ void addlistItemAtEnd(struct listHeader *head, int16_t val)
     printf("Added item %d to the end of a list\n", val);
   }
   head->size = head->size + 1;
-  printf("The size of the list with id: %d, is now: %d", head->id, head->size);
+  printf("The size of the list with id: %d, is now: %d\n", head->id, head->size);
 }
 
 /**
@@ -445,13 +388,13 @@ void emptyList(struct listHeader *head)
   printf("Emptied a list\n");
 }
 
-
 /**
  * getValues generate a int16_t array and copy there all the header values.
  * param head: pointer to the head of the data structure
  * param returnData: the pointer where to set the data
  * return: void
  */
+/*
 int16_t getValues(struct listHeader *head, int16_t *returnData)
 {
   // Check head validity
@@ -461,8 +404,8 @@ int16_t getValues(struct listHeader *head, int16_t *returnData)
   }
   
   // define data value ptr traveler
-  struct listItem *dvptr = head->first;
-	// assocate the poiter with memory array
+  struct listItem *next = head->first;
+  // assocate the poiter with memory array
   returnData = malloc((head->size + 1)*sizeof(int16_t)); //Allocate heap memory for the return array of ints
 
   // Save head id
@@ -472,13 +415,14 @@ int16_t getValues(struct listHeader *head, int16_t *returnData)
   int counter;
   for (counter = 1; counter <= head->size; counter++){
     // copy item values to the array to be returned
-    returnData[counter] = dvptr->value;
-    dvptr = dvptr->next;            
-    if (dvptr == NULL){
+    returnData[counter] = next->value;
+    next = next->next;            
+    if (next == NULL){
       break;
-  	}
+    }
+    printf("value = %d\n", next->value);
   }
   
   return head->size;
 }
-  
+*/ 
